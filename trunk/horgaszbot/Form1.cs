@@ -1,9 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
+using AForge;
+using AForge.Imaging;
+using AForge.Imaging.Filters;
 
 namespace horgaszbot
 {
@@ -24,10 +28,7 @@ namespace horgaszbot
             Console.WriteLine("begin start");
             try
             {
-                var hwndWow = WowLocator.HwndFind();
-              
-                var bmpAncor = new Bitmap(System.Reflection.Assembly.GetEntryAssembly().GetManifestResourceStream("horgaszbot.ancor.bmp"));
-                var actor = new Actor(hwndWow, bmpAncor, DgSendKeys);
+                var actor = ActorCreate();
 
                 fishermanLooper = new FishermanLooper(new Fisherman(actor, RefreshTsto));
                 fishermanLooper.Start();
@@ -37,6 +38,21 @@ namespace horgaszbot
                 Console.WriteLine("cannot start fishing\n" + er.Message);
             }
             Console.WriteLine("end start");
+        }
+
+        private Actor ActorCreate()
+        {
+            var hwndWow = WowLocator.HwndFind();
+
+            var bmpAncor = BmpFromRes("horgaszbot.ancor.bmp");
+            var actor = new Actor(hwndWow, bmpAncor, DgSendKeys);
+            return actor;
+        }
+
+        private Bitmap BmpFromRes(string resid)
+        {
+            return new Bitmap(System.Reflection.Assembly.GetEntryAssembly().GetManifestResourceStream(resid));
+            
         }
 
         private void DgSendKeys(string st)
@@ -68,6 +84,7 @@ namespace horgaszbot
                 return;
             }
             pictureBox1.Image = bmp;
+            Application.DoEvents();
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -79,6 +96,14 @@ namespace horgaszbot
                 else
                     Stop();
             }
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            
+            var f = new Fisherman(ActorCreate(), RefreshTsto);
+            User32.SetForegroundWindow(WowLocator.HwndFind());
+            f.Boo();
         }
     }
 }
