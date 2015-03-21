@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -34,69 +35,6 @@ namespace Horgaszbot
             InitializeComponent();
         }
 
-
-
-        private HwndSource _source;
-        private const int HOTKEY_ID = 9000;
-
-        protected override void OnSourceInitialized(EventArgs e)
-        {
-            base.OnSourceInitialized(e);
-            var helper = new WindowInteropHelper(this);
-            _source = HwndSource.FromHwnd(helper.Handle);
-            _source.AddHook(HwndHook);
-            RegisterHotKey();
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            _source.RemoveHook(HwndHook);
-            _source = null;
-            UnregisterHotKey();
-            base.OnClosed(e);
-        }
-
-        private void RegisterHotKey()
-        {
-            var helper = new WindowInteropHelper(this);
-            const uint VK_F10 = 0x79;
-            const uint MOD_CTRL = 0x0002;
-            if (!User32.RegisterHotKey(helper.Handle, HOTKEY_ID, MOD_CTRL, VK_F10))
-            {
-                // handle error
-            }
-        }
-
-        private void UnregisterHotKey()
-        {
-            var helper = new WindowInteropHelper(this);
-            User32.UnregisterHotKey(helper.Handle, HOTKEY_ID);
-        }
-
-        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-        {
-            const int WM_HOTKEY = 0x0312;
-            switch (msg)
-            {
-                case WM_HOTKEY:
-                    switch (wParam.ToInt32())
-                    {
-                        case HOTKEY_ID:
-                            OnHotKeyPressed();
-                            handled = true;
-                            break;
-                    }
-                    break;
-            }
-            return IntPtr.Zero;
-        }
-
-        private void OnHotKeyPressed()
-        {
-            fStopRequested = true;
-        }
-
-
         private void Button_Click(object sender, RoutedEventArgs e)
         {
             if (fFishing)
@@ -114,46 +52,51 @@ namespace Horgaszbot
             fStopRequested = false;
             while (!fStopRequested)
             {
-                DoEvents();
-
-                hwnd = WowLocator.HwndFind();
-                if (User32.GetForegroundWindow() != hwnd)
+                try
                 {
-                    Thread.Sleep(100);
-                    continue;
-                }
-                var cursorHandleNotAncor = CursorHandleGet(0, 0);
+                    hwnd = WowLocator.HwndFind();
 
-                var bmp1 = new ScreenCapture().CaptureWindow(hwnd);
-
-                CastFishingLine();
-                var bmp2 = new ScreenCapture().CaptureWindow(hwnd);
-
-                var rgrect = RgrectBobberCandidate(bmp1, bmp2);
-
-                var bmp = Tsto(bmp2, rgrect, null);
-                MemoryStream ms = new MemoryStream();
-                bmp.Save(ms, ImageFormat.Png);
-                ms.Position = 0;
-                BitmapImage bi = new BitmapImage();
-                bi.BeginInit();
-                bi.StreamSource = ms;
-                bi.EndInit();
-                Image1.Source = bi;
-                
-                foreach (var rect in rgrect)
-                {
                     DoEvents();
-                    if (fStopRequested)
-                        break;
 
-                    var pt = new Point((rect.Left + rect.Right)/2, (rect.Top + rect.Bottom)/2);
-                    if (FBobbler(pt, bmpAncor, cursorHandleNotAncor))
+                    var cursorHandleNotAncor = CursorHandleGet(0, 0);
+
+                    var bmp1 = new ScreenCapture().CaptureWindow(hwnd);
+
+                    CastFishingLine();
+                    var bmp2 = new ScreenCapture().CaptureWindow(hwnd);
+
+                    var rgrect = RgrectBobberCandidate(bmp1, bmp2);
+
+                    var bmp = Tsto(bmp2, rgrect, null);
+                    MemoryStream ms = new MemoryStream();
+                    bmp.Save(ms, ImageFormat.Png);
+                    ms.Position = 0;
+                    BitmapImage bi = new BitmapImage();
+                    bi.BeginInit();
+                    bi.StreamSource = ms;
+                    bi.EndInit();
+                    Image1.Source = bi;
+
+                    foreach (var rect in rgrect)
                     {
-                        if (FWaitForFish())
-                            CatchFish(pt);
-                        break;
+                        DoEvents();
+
+                        var pt = new Point((rect.Left + rect.Right)/2, (rect.Top + rect.Bottom)/2);
+                        if (FBobbler(pt, bmpAncor, cursorHandleNotAncor))
+                        {
+                            if (FWaitForFish())
+                                CatchFish(pt);
+                            break;
+                        }
                     }
+                }
+                catch (StopReq)
+                {
+                    break;
+                }
+                catch (PauseReq)
+                {
+                    continue;
                 }
             }
 
@@ -162,10 +105,28 @@ namespace Horgaszbot
         }
 
 
+        private class PauseReq : Exception
+        {
+        }
+
+        private class StopReq : Exception
+        {
+        }
+
         void DoEvents()
         {
             Application.Current.Dispatcher.Invoke(DispatcherPriority.Background,
                                                   new Action(delegate { }));
+         
+            if (fStopRequested)
+                throw new StopReq();
+
+            if (User32.GetForegroundWindow() != hwnd)
+            {
+                Thread.Sleep(100);
+                throw new PauseReq();
+            }
+
         }
 
         private bool FBobbler(Point pt, Bitmap bmpAncor, IntPtr? cursorHandleNotAncor)
@@ -310,12 +271,11 @@ namespace Horgaszbot
                 if (qMpv.Average() > 0.15)
                     return true;
                 DoEvents();
-                if (fStopRequested)
-                    break;
             }
 
             return false;
         }
+
 
     }
 }
